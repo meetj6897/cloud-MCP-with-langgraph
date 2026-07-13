@@ -32,12 +32,21 @@ mcp_exl =FastMCP(name='excel')
 
 
 @mcp_exl.tool()
-def create_excel(filename: str, data: list[list]) -> str:
-    """Create an Excel file with given data."""
+def create_excel(filename: str, data: list) -> str:
+    """Create an Excel file from a flat list or a list of rows."""
     wb = openpyxl.Workbook()
     ws = wb.active
-    for row in data:
-        ws.append(row)
+
+    if not data:
+        wb.save(filename)
+        return f"Created {filename}"
+
+    if all(isinstance(item, (list, tuple)) for item in data):
+        for row in data:
+            ws.append(list(row))
+    else:
+        ws.append(list(data))
+
     wb.save(filename)
     return f"Created {filename}"
 
