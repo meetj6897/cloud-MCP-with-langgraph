@@ -1,4 +1,4 @@
-
+https://cloud-mcp-with-langgraph.fastmcp.app/mcp  <-- server url of fastmcp cloud
 """
 # uv init . it itnitialize the project and make some files where we write our ccode
 # uv add fastmcp
