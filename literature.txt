@@ -1,0 +1,233 @@
+
+"""
+# uv init . it itnitialize the project and make some files where we write our ccode
+# uv add fastmcp
+
+uv run automatically uses the virtual environment it manages.
+ You only need to activate it manually if you're using plain python commands directly in the shell.
+
+  uv run fastmcp run main.py
+  uv run fastmcp dev main.py   
+
+fastmcp run — starts the server (no inspector) uv run fastmcp dev main.py 
+fastmcp dev — starts the server with the MCP inspector UI in the browser
+
+uv run fastmcp install claude-desktop main.py    this command used for to connect this server to claude desktop add the proper uv path in the config of the claude desktop 
+
+
+
+remote mcp server means deploying mcp server to run multiple client and its slow than local mcp server (on your pc only) there is not such difference in code 
+
+deploying on fastmcp cloud free rn, 
+
+problem identifying on our mcp server
+
+ifyou only write the mcp.run() at the end of the main then it run on STDIO by default but we have to move this to cloud so now we are giving specific transport at end
+mcp.run(transport='http',host=0.0.0.0,port=8000) like this so now we want streamble http other all code is same
+
+
+
+
+
+############### FastMCP vs MCP SDK
+
+MCP SDK (official)          vs          FastMCP (developer-friendly wrapper)
+------------------------------------------------------------------------
+pip install mcp                          pip install fastmcp (or uv add fastmcp)
+
+Low-level, verbose boilerplate           High-level decorators (@mcp.tool, @mcp.resource, @mcp.prompt)
+You manually define schemas              Schemas auto-generated from Python type hints
+More control, more code                  Less code, faster to build
+
+Example — same "add" tool:
+
+  MCP SDK:                               FastMCP:
+  server = Server("demo")                mcp = FastMCP("demo")
+  @server.list_tools()                   @mcp.tool()
+  async def list_tools():                def add(a: int, b: int) -> int:
+      return [Tool(name="add",               return a + b
+              inputSchema={...})]
+  @server.call_tool()
+  async def call_tool(name, args):
+      if name == "add":
+          return args["a"] + args["b"]
+
+Timeline:
+  MCP SDK    → official Anthropic library, gives full protocol control
+  FastMCP    → community-built on top of MCP SDK to simplify development
+  FastMCP v2 → became the officially recommended developer-friendly approach
+
+When to use which:
+  MCP SDK   → need fine-grained protocol control, advanced custom transports
+  FastMCP   → almost always — faster to build, less boilerplate, same result
+
+One line: FastMCP is to MCP SDK what FastAPI is to raw http.server.
+
+
+Great question. Here's the core difference:
+
+FastAPI — you build an API for humans/apps to call. Every caller needs to know the URL, auth, payload format, and what each endpoint does. The LLM can't discover or use it on its own.
+
+MCP — you build an API for the LLM itself. The LLM connects, asks "what can you do?", gets back a list of tools/resources/prompts with descriptions, and decides on its own which ones to call and when.
+
+The key thing MCP adds:
+
+
+FastAPI:  Human reads docs → writes code → calls /add?a=3&b=4
+MCP:      LLM connects → discovers "add(a,b): adds two numbers" → calls it automatically
+MCP is a standard protocol — any LLM that speaks MCP (Claude, GPT, etc.) can connect to any MCP server and use it without custom integration code.
+
+Why not just FastAPI with a system prompt describing the endpoints?
+
+You could — but:
+
+You'd manually describe every endpoint in the prompt (error-prone, gets stale)
+No standard way for the LLM to call it back
+Tool results don't flow back into the conversation cleanly
+Every LLM needs a custom integration
+MCP handles all of that automatically — tool discovery, calling, result injection into the conversation — in a standard way that works across all LLMs and clients.
+
+One line summary: FastAPI is for apps calling your server. MCP is for LLMs calling your server — with auto-discovery built in.
+
+
+############### FastAPI ↔ FastMCP relationship
+
+1. SAME DESIGN PHILOSOPHY — decorator-based, type-hint-driven
+   FastAPI:                              FastMCP:
+   @app.get("/add")                      @mcp.tool()
+   def add(a: int, b: int) -> int:       def add(a: int, b: int) -> int:
+       return a + b                          return a + b
+
+   Both auto-generate schemas from Python type hints.
+   FastMCP was explicitly inspired by FastAPI's developer experience.
+
+2. MOUNTING FastMCP INSIDE FastAPI — run both on one server
+   Use case: you want a REST API for your app AND MCP tools for LLMs, same process.
+
+   from fastapi import FastAPI
+   from fastmcp import FastMCP
+
+   mcp = FastMCP("demo")
+   app = FastAPI()
+
+   @mcp.tool()
+   def add(a: int, b: int) -> int:
+       return a + b
+
+   @app.get("/health")
+   def health():
+       return {"status": "ok"}
+
+   # Mount MCP server at /mcp — now both live on the same port
+   app.mount("/mcp", mcp.http_app())
+
+   # Run: uvicorn main:app --port 8000
+   # REST API  → http://localhost:8000/health        (for apps)
+   # MCP tools → http://localhost:8000/mcp/mcp       (for LLMs)
+
+3. TRANSPORTS — where they diverge
+   FastAPI  → always HTTP (REST/JSON), browsers & apps call it
+   FastMCP  → multiple transports:
+              stdio         → local tools, Claude Desktop
+              http          → remote/cloud deployment
+              sse           → streaming responses
+
+   When you mount FastMCP into FastAPI, FastMCP uses HTTP transport
+   and FastAPI handles the actual web server (uvicorn).
+
+4. WHEN TO USE WHICH
+   Only FastAPI    → building a traditional REST API, no LLM integration
+   Only FastMCP    → purely an MCP server for LLM tools
+   FastAPI + FastMCP together → LLM tools AND human-facing endpoints in one app
+                                e.g. dashboard at /dashboard, MCP tools at /mcp
+
+
+
+asyncio = run multiple tasks on a single thread by pausing at I/O waits instead of blocking.
+
+The core idea:
+
+
+import asyncio
+
+async def fetch(name, delay):
+    print(f"{name} started")
+    await asyncio.sleep(delay)  # pauses HERE, lets others run
+    print(f"{name} done")
+
+async def main():
+    # Run both CONCURRENTLY — total time = 2s, not 1+2=3s
+    await asyncio.gather(
+        fetch("Task A", 2),
+        fetch("Task B", 1),
+    )
+
+asyncio.run(main())
+Output:
+
+
+Task A started
+Task B started
+Task B done    ← finishes first (1s)
+Task A done    ← finishes after (2s)
+3 rules to know:
+
+Rule	       Meaning
+async def	        This function can be paused
+await	            Pause here, let other tasks run
+asyncio.gather()	Run multiple coroutines concurrently
+
+When to use it:
+
+Calling APIs, reading files, DB queries — anything that waits for I/O
+FastMCP/FastAPI use it internally — that's why their handlers are async def
+When NOT to use it:
+
+CPU-heavy work (math, image processing) — use multiprocessing instead
+asyncio only helps when you're waiting, not when you're computing
+Real-world pattern (calling 3 APIs at once):
+
+
+async def main():
+    results = await asyncio.gather(
+        call_weather_api(),
+        call_news_api(),
+        call_stocks_api(),
+    )
+    # all 3 ran concurrently
+Without asyncio, these would run one after another. With it, total time = slowest single call.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+############### clinet
+so now when we want to make the client then we can use the fastmc, mcp.client or langchain/graph integrated mcp 
+
+we will use the langgraph with mcp so we can make the 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+"""
